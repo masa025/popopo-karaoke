@@ -1521,3 +1521,51 @@ body {
     display: none;
   }
 }
+
+/* --- Listener Score Hero (prominent top display) --- */
+.listener-score-hero {
+  padding: 14px 22px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.hero-score-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.hero-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.hero-score-num {
+  font-family: 'Outfit', sans-serif;
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  transition: text-shadow 0.3s ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-score-feedback {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
+}
+
+@media (max-width: 380px) {
+  .hero-score-num {
+    font-size: 2.4rem;
+  }
+}

@@ -51,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listener Side Variables
   let listenerCanvas, listenerCtx;
   let listenerParticles = [];
+  let floatingEmojis = [];
+  const MAX_FLOATING_EMOJIS = 40;
   let tapCounts = {};
   let tapTimestamps = [];
   let comboCount = 0;
@@ -159,6 +161,38 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.shadowColor = this.color;
       ctx.fill();
       ctx.shadowBlur = 0;
+    }
+  }
+
+  // Floating emoji for reactions from OTHER listeners (rises from the bottom, TikTok-heart style)
+  class FloatingEmoji {
+    constructor(emoji, canvasWidth, canvasHeight) {
+      this.emoji = emoji;
+      this.x = 30 + Math.random() * (canvasWidth - 60);
+      this.y = canvasHeight + 30;
+      this.vy = 1.6 + Math.random() * 1.4;
+      this.swayAmp = 15 + Math.random() * 25;
+      this.swaySpeed = 0.02 + Math.random() * 0.03;
+      this.phase = Math.random() * Math.PI * 2;
+      this.size = 22 + Math.random() * 14;
+      this.life = 1.0;
+      this.decay = 0.004 + Math.random() * 0.003;
+      this.baseX = this.x;
+    }
+    update() {
+      this.y -= this.vy;
+      this.phase += this.swaySpeed;
+      this.x = this.baseX + Math.sin(this.phase) * this.swayAmp;
+      this.life -= this.decay;
+      return this.life > 0 && this.y > -40;
+    }
+    draw(ctx) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, this.life * 1.5);
+      ctx.font = `${this.size}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(this.emoji, this.x, this.y);
+      ctx.restore();
     }
   }
 
@@ -472,6 +506,8 @@ document.addEventListener('DOMContentLoaded', () => {
           rect.top + rect.height / 2,
           reactionType
         );
+        // Own reactions also float up, matching what everyone else sees
+        spawnFloatingEmoji(reactionType);
 
         sendReaction(reactionType);
       });
@@ -530,6 +566,35 @@ document.addEventListener('DOMContentLoaded', () => {
     badge.innerText = isLive ? 'LIVE' : '待機中';
     badge.classList.toggle('live', isLive);
     badge.classList.toggle('waiting', !isLive);
+  }
+
+  function updateListenerScoreHero(score) {
+    const numEl = document.getElementById('listener-score-val');
+    const fbEl = document.getElementById('listener-score-feedback');
+    if (!numEl) return;
+
+    numEl.innerText = score.toFixed(1);
+    const glowFactor = Math.max(0, Math.min(1, score / 100));
+
+    let text, color;
+    if (score > 85) { text = '神歌声 ✨'; color = 'var(--glow-pink)'; }
+    else if (score > 65) { text = '鳥肌! ⚡'; color = 'var(--primary-neon)'; }
+    else if (score > 40) { text = 'GOOD 🎵'; color = 'var(--secondary-neon)'; }
+    else { text = 'STANDBY'; color = 'var(--text-secondary)'; }
+
+    numEl.style.textShadow = `0 0 ${8 + glowFactor * 24}px rgba(168, 85, 247, ${0.3 + glowFactor * 0.7})`;
+    if (fbEl) {
+      fbEl.innerText = text;
+      fbEl.style.color = color;
+    }
+  }
+
+  function spawnFloatingEmoji(reactionType) {
+    if (!listenerCanvas) return;
+    if (floatingEmojis.length >= MAX_FLOATING_EMOJIS) return; // Avoid flooding on big rooms
+    const meta = REACTION_META[reactionType];
+    if (!meta) return;
+    floatingEmojis.push(new FloatingEmoji(meta[0], listenerCanvas.width, listenerCanvas.height));
   }
 
   function showListenerNotice(msg) {
@@ -621,10 +686,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         socket.on('global-score-sync', ({ score, heat: globalHeat }) => {
-          document.getElementById('listener-score-val').innerText = (score || 0).toFixed(1);
+          updateListenerScoreHero(score || 0);
           const h = Math.max(0, Math.min(100, globalHeat || 0));
           document.getElementById('heat-value').innerText = Math.round(h);
           document.getElementById('heat-bar-fill').style.width = `${h}%`;
+        });
+
+        // Reactions from OTHER listeners float up across the screen
+        socket.on('listener-reaction', ({ reactionType }) => {
+          spawnFloatingEmoji(reactionType);
         });
 
         socket.on('song-event', ({ event, payload }) => {
@@ -1040,6 +1110,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const active = p.update();
       if (active) {
         p.draw(listenerCtx);
+      }
+      return active;
+    });
+
+    // Floating emoji reactions from the whole room
+    floatingEmojis = floatingEmojis.filter(f => {
+      const active = f.update();
+      if (active) {
+        f.draw(listenerCtx);
       }
       return active;
     });
