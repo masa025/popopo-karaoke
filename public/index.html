@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>POPOPO SparkleScore Live - アカペラ採点システム</title>
   <!-- SEO Meta Tags -->
-  <meta name="description" content="POPOPOアプリ内の新機能プロトタイプ。歌い手のアカペラ歌唱をリスナーがリアルタイムで採点し、美しいオーロラビジュアルでつながるインタラクティブシステム。">
+  <meta name="description" content="POPOPOのライブ配信と併用するリアルタイム採点システム。リスナーのリアクションが会場の熱量となり、歌声を彩ります。">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,9 +31,9 @@
     <div class="glass-card selection-card">
       <div class="brand-logo">POPOPO</div>
       <h1 class="glow-text">SparkleScore Live</h1>
-      <p class="subtitle">アカペラ歌唱をリアルタイムに彩り、採点するコンセプトデモ</p>
-      
-      <div class="selection-buttons">
+      <p class="subtitle">POPOPOのライブと併用する、リアルタイム採点&リアクションシステム</p>
+
+      <div class="selection-buttons" id="selection-buttons">
         <button id="btn-select-streamer" class="btn btn-primary btn-glow">
           <i class="fa-solid fa-microphone-lines icon-margin"></i> 歌い手 (Streamer) として開始
         </button>
@@ -42,11 +42,22 @@
         </button>
       </div>
 
+      <!-- Streamer Setup Form -->
+      <div class="room-input-container" id="streamer-setup" style="display: none;">
+        <input type="text" id="input-song-title" placeholder="曲名 (例: Amazing Grace)" maxlength="60">
+        <input type="text" id="input-singer-name" placeholder="歌い手名 (任意)" maxlength="30">
+        <button id="btn-create-room" class="btn btn-primary btn-glow">ルームを作成して開始</button>
+        <button id="btn-back-selection-streamer" class="btn-text">戻る</button>
+      </div>
+
+      <!-- Listener Join Form -->
       <div class="room-input-container" id="listener-room-input" style="display: none;">
-        <input type="text" id="input-room-id" placeholder="ルームIDを入力 (例: popopo)" value="live-session">
+        <input type="text" id="input-room-id" placeholder="ルームコード (例: AB3K)" maxlength="8" autocapitalize="characters" autocomplete="off">
         <button id="btn-join-room" class="btn btn-accent">ルームへ入室</button>
         <button id="btn-back-selection" class="btn-text">戻る</button>
       </div>
+
+      <p id="join-error" class="join-error" style="display: none;"></p>
     </div>
   </div>
 
@@ -55,14 +66,15 @@
     <!-- Header panel with connection details -->
     <div class="streamer-header glass-card">
       <div class="streamer-info">
-        <div class="live-indicator">
-          <span class="live-dot"></span> LIVE
+        <div class="live-indicator" id="streamer-live-indicator">
+          <span class="live-dot"></span> <span id="streamer-live-text">READY</span>
         </div>
-        <div class="room-title">Amazing Grace - A Cappella Live</div>
+        <div class="room-title" id="streamer-song-title">-</div>
       </div>
       <div class="connection-widgets">
+        <span class="room-code-chip">ルーム <b id="streamer-room-code">----</b></span>
         <div class="viewer-count">
-          <i class="fa-solid fa-users"></i> <span id="streamer-viewer-count">0</span> listeners
+          <i class="fa-solid fa-users"></i> <span id="streamer-viewer-count">0</span>
         </div>
         <button id="btn-toggle-qr" class="btn btn-sm btn-outline">
           <i class="fa-solid fa-qrcode"></i> リスナー招待
@@ -73,7 +85,7 @@
     <!-- Main Live Stage Canvas -->
     <div class="stage-container">
       <canvas id="stage-canvas"></canvas>
-      
+
       <!-- Overlaid Interactive Scoring Core -->
       <div class="score-core-container">
         <div class="score-ring-outer">
@@ -91,19 +103,11 @@
         <span id="sync-multiplier" class="sync-multiplier">x1.5</span>
       </div>
 
-      <!-- Overlaid Lyrics & Pitch Guide -->
-      <div class="lyrics-pitch-overlay glass-card">
-        <div class="pitch-guide-track">
-          <!-- The visual timeline of upcoming pitch guide notes -->
-          <div id="pitch-guide-notes" class="pitch-notes-container"></div>
-          <!-- Vertical indicator where current time pitch is tracked -->
-          <div class="pitch-playhead"></div>
-          <!-- Pitch match target avatar / cursor -->
-          <div id="pitch-player-pointer" class="pitch-pointer"></div>
-        </div>
-        <div class="lyrics-display">
-          <p id="current-lyric" class="lyric-line next-lyric">Preparing A Cappella...</p>
-        </div>
+      <!-- Live Status Bar -->
+      <div class="live-status-bar glass-card">
+        <span id="live-state-label" class="live-state waiting">待機中</span>
+        <span id="live-timer" class="live-timer">00:00</span>
+        <span class="live-heat-mini"><i class="fa-solid fa-fire-flame-curved"></i> <span id="streamer-heat-val">0</span></span>
       </div>
     </div>
 
@@ -112,7 +116,7 @@
       <div class="glass-card modal-card">
         <button id="btn-close-qr" class="modal-close-btn">&times;</button>
         <h3>リスナーを招待する</h3>
-        <p class="modal-desc">スマホでQRコードを読み取るか、URLを共有してリアルタイム採点に参加してもらいます。</p>
+        <p class="modal-desc">スマホでQRコードを読み取るか、URLまたはルームコード <b id="qr-room-code">----</b> を共有してください。</p>
         <div id="qrcode-container" class="qrcode-wrapper"></div>
         <div class="share-url-container">
           <input type="text" id="share-url-input" readonly>
@@ -162,27 +166,15 @@
       </div>
     </div>
 
-    <!-- Demo Audio / Humming Controller (Simulating Streamer Activity) -->
+    <!-- Song Controls -->
     <div class="streamer-controls glass-card">
-      <div class="control-group">
-        <span class="control-label">歌声シミュレーション:</span>
-        <button id="btn-start-demo-song" class="btn btn-accent btn-sm">
-          <i class="fa-solid fa-circle-play"></i> デモ歌唱スタート
-        </button>
-        <button id="btn-stop-demo-song" class="btn btn-danger btn-sm" disabled>
-          <i class="fa-solid fa-circle-stop"></i> 停止
-        </button>
-      </div>
-      <div class="control-group pitch-sliders">
-        <label for="slider-sim-pitch">ピッチ精度補正:</label>
-        <input type="range" id="slider-sim-pitch" min="0" max="100" value="85">
-        <span id="sim-pitch-val">85%</span>
-      </div>
-      <div class="control-group volume-sliders">
-        <label for="slider-sim-volume">声量:</label>
-        <input type="range" id="slider-sim-volume" min="0" max="100" value="70">
-        <span id="sim-volume-val">70%</span>
-      </div>
+      <button id="btn-start-song" class="btn btn-primary btn-glow">
+        <i class="fa-solid fa-microphone-lines"></i> 歌唱スタート
+      </button>
+      <button id="btn-end-song" class="btn btn-danger" disabled>
+        <i class="fa-solid fa-flag-checkered"></i> 歌唱終了
+      </button>
+      <span class="controls-hint">POPOPOで配信を始めたら「歌唱スタート」を押してください</span>
     </div>
   </div>
 
@@ -193,15 +185,19 @@
       <div class="listener-stage-info">
         <span class="music-note-icon"><i class="fa-solid fa-music"></i></span>
         <div class="song-details">
-          <span class="song-title">Amazing Grace</span>
-          <span class="streamer-name">A Cappella Live Session</span>
+          <span class="song-title" id="listener-song-title">-</span>
+          <span class="streamer-name" id="listener-singer-name">-</span>
         </div>
+        <span id="listener-live-badge" class="listener-live-badge waiting">待機中</span>
       </div>
       <div class="listener-score-mini">
         <span class="mini-score-label">Live Score:</span>
         <span id="listener-score-val" class="mini-score-num">0.0</span>
       </div>
     </div>
+
+    <!-- Connection notice (streamer offline etc.) -->
+    <div id="listener-notice" class="listener-notice" style="display: none;"></div>
 
     <!-- Main scoring controller -->
     <div class="scoring-panel">

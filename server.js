@@ -23,62 +23,121 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Simple room/session storage
-// Map: roomId -> { streamerSocketId, scores: [], reactionsCount: 0 }
+// Room storage
+// Map: roomId -> { streamerSocketId, songTitle, singerName, listenersCount, isLive, createdAt }
 const rooms = new Map();
 
 // Per-socket rate-limit buckets for reactions
-// Map: socketId -> { count, windowStart }
 const reactionBuckets = new Map();
+
+// Room ID generation (unambiguous characters, 4 chars: readable & typeable on phones)
+const ROOM_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function generateRoomId() {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    let id = '';
+    for (let i = 0; i < 4; i++) {
+      id += ROOM_CHARS[Math.floor(Math.random() * ROOM_CHARS.length)];
+    }
+    if (!rooms.has(id)) return id;
+  }
+  return 'R' + Date.now().toString(36).toUpperCase().slice(-5);
+}
+
+function sanitizeText(value, maxLen) {
+  return String(value || '').replace(/[<>]/g, '').trim().slice(0, maxLen);
+}
+
+function publicRoomInfo(room) {
+  return {
+    songTitle: room.songTitle,
+    singerName: room.singerName,
+    isLive: room.isLive,
+    listenersCount: room.listenersCount
+  };
+}
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // Create or Join Room
-  socket.on('join-room', ({ roomId, role }) => {
-    socket.join(roomId);
-    console.log(`User ${socket.id} joined room ${roomId} as ${role}`);
+  // Streamer creates a brand-new room with a generated code
+  socket.on('create-room', (data, callback) => {
+    const songTitle = sanitizeText(data && data.songTitle, 60) || 'アカペラライブ';
+    const singerName = sanitizeText(data && data.singerName, 30);
+    const roomId = generateRoomId();
 
-    if (role === 'streamer') {
-      if (!rooms.has(roomId)) {
-        rooms.set(roomId, {
-          streamerSocketId: socket.id,
-          scores: [],
-          reactionsCount: 0,
-          listenersCount: 0
-        });
-      } else {
-        rooms.get(roomId).streamerSocketId = socket.id;
-      }
-      // Broadcast listener count to streamer
-      const room = rooms.get(roomId);
-      io.to(roomId).emit('room-status', {
-        listenersCount: room.listenersCount
-      });
-    } else if (role === 'listener') {
-      const room = rooms.get(roomId);
-      if (room) {
-        room.listenersCount++;
-        io.to(roomId).emit('room-status', {
-          listenersCount: room.listenersCount
-        });
-      }
+    rooms.set(roomId, {
+      streamerSocketId: socket.id,
+      songTitle,
+      singerName,
+      listenersCount: 0,
+      isLive: false,
+      createdAt: Date.now()
+    });
+    socket.join(roomId);
+    console.log(`Room ${roomId} created by ${socket.id} (${songTitle})`);
+
+    if (typeof callback === 'function') {
+      callback({ ok: true, roomId, room: publicRoomInfo(rooms.get(roomId)) });
     }
   });
 
-  // Handle score updates from listener
-  socket.on('score-update', ({ roomId, score }) => {
-    // Broadcast to everyone in the room (especially the streamer)
-    socket.to(roomId).emit('listener-score', {
-      listenerId: socket.id,
-      score: parseFloat(score)
+  // Join a room (listener joining, or streamer re-joining after reload / server restart)
+  socket.on('join-room', (data, callback) => {
+    const roomId = sanitizeText(data && data.roomId, 8).toUpperCase();
+    const role = data && data.role;
+    let room = rooms.get(roomId);
+
+    if (role === 'streamer') {
+      if (!room) {
+        // Re-create the room (page reload after server restart, etc.)
+        room = {
+          streamerSocketId: socket.id,
+          songTitle: sanitizeText(data && data.songTitle, 60) || 'アカペラライブ',
+          singerName: sanitizeText(data && data.singerName, 30),
+          listenersCount: 0,
+          isLive: false,
+          createdAt: Date.now()
+        };
+        rooms.set(roomId, room);
+      } else {
+        room.streamerSocketId = socket.id;
+        if (data && data.songTitle) room.songTitle = sanitizeText(data.songTitle, 60);
+        if (data && data.singerName) room.singerName = sanitizeText(data.singerName, 30);
+      }
+      socket.join(roomId);
+      if (typeof callback === 'function') {
+        callback({ ok: true, roomId, room: publicRoomInfo(room) });
+      }
+      io.to(roomId).emit('room-status', {
+        listenersCount: room.listenersCount,
+        streamerOnline: true
+      });
+      return;
+    }
+
+    // Listener
+    if (!room) {
+      if (typeof callback === 'function') {
+        callback({ ok: false, error: 'ルームが見つかりません。コードを確認してください。' });
+      }
+      return;
+    }
+
+    socket.join(roomId);
+    room.listenersCount++;
+    if (typeof callback === 'function') {
+      callback({ ok: true, roomId, room: publicRoomInfo(room) });
+    }
+    io.to(roomId).emit('room-status', {
+      listenersCount: room.listenersCount,
+      streamerOnline: !!room.streamerSocketId
     });
   });
 
   // Handle final overall score + heat sync from streamer to listeners
   socket.on('score-sync-relay', ({ roomId, score, heat }) => {
     socket.to(roomId).emit('global-score-sync', {
-      score: parseFloat(score),
+      score: parseFloat(score) || 0,
       heat: parseFloat(heat) || 0
     });
   });
@@ -94,15 +153,20 @@ io.on('connection', (socket) => {
     if (bucket.count >= 10) return; // Drop spam silently
     bucket.count++;
 
-    // Broadcast reaction details to the streamer and other listeners
     socket.to(roomId).emit('listener-reaction', {
       listenerId: socket.id,
       reactionType
     });
   });
 
-  // Relay song lifecycle events (start / end / final-result) from streamer to listeners
+  // Relay song lifecycle events (start / end / final-result) - streamer only
   socket.on('song-event', ({ roomId, event, payload }) => {
+    const room = rooms.get(roomId);
+    if (room && socket.id !== room.streamerSocketId) return; // Only the streamer may emit
+    if (room) {
+      if (event === 'song-start') room.isLive = true;
+      if (event === 'song-end') room.isLive = false;
+    }
     socket.to(roomId).emit('song-event', { event, payload: payload || {} });
   });
 
@@ -115,19 +179,30 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnecting', () => {
-    // Decrement listenersCount when a listener leaves
     for (const roomId of socket.rooms) {
       const room = rooms.get(roomId);
-      if (room) {
-        if (socket.id === room.streamerSocketId) {
-          // Streamer left - could notify listeners or clean up
-          console.log(`Streamer left room ${roomId}`);
-        } else {
-          room.listenersCount = Math.max(0, room.listenersCount - 1);
-          io.to(roomId).emit('room-status', {
-            listenersCount: room.listenersCount
-          });
-        }
+      if (!room) continue;
+
+      if (socket.id === room.streamerSocketId) {
+        // Streamer left: notify listeners, clean up the room if they don't return
+        room.streamerSocketId = null;
+        socket.to(roomId).emit('room-status', {
+          listenersCount: room.listenersCount,
+          streamerOnline: false
+        });
+        setTimeout(() => {
+          const r = rooms.get(roomId);
+          if (r && !r.streamerSocketId) {
+            rooms.delete(roomId);
+            console.log(`Room ${roomId} cleaned up (streamer did not return)`);
+          }
+        }, 10 * 60 * 1000);
+      } else {
+        room.listenersCount = Math.max(0, room.listenersCount - 1);
+        io.to(roomId).emit('room-status', {
+          listenersCount: room.listenersCount,
+          streamerOnline: !!room.streamerSocketId
+        });
       }
     }
   });
@@ -143,7 +218,6 @@ function getLocalIP() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      // family can be 'IPv4' or 4 depending on Node version
       if ((iface.family === 'IPv4' || iface.family === 4) && !iface.internal) {
         return iface.address;
       }
@@ -158,6 +232,5 @@ server.listen(PORT, () => {
   console.log(`POPOPO Scoring Server is running on:`);
   console.log(`- Local Access:   http://localhost:${PORT}`);
   console.log(`- Network Access: http://${localIP}:${PORT}`);
-  console.log(`Use the Network Access URL to connect your phone!`);
   console.log('==================================================');
 });
