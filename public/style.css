@@ -1569,3 +1569,15 @@ body {
     font-size: 2.4rem;
   }
 }
+
+/* --- Selection screen centering hardening --- */
+/* Scroll instead of clipping when the card is taller than the viewport */
+#selection-screen {
+  overflow-y: auto;
+}
+
+/* Safe centering: auto margins center the card in the flex container and
+   collapse gracefully (no clipped top/left) when space runs out */
+.selection-card {
+  margin: auto;
+}
