@@ -1,0 +1,18 @@
+[
+  { "time": 2, "note": 50, "text": "Amazing Grace" },
+  { "time": 6, "note": 60, "text": "how sweet the sound" },
+  { "time": 10, "note": 58, "text": "That saved a wretch" },
+  { "time": 14, "note": 55, "text": "like me" },
+  { "time": 18, "note": 50, "text": "I once was lost" },
+  { "time": 22, "note": 60, "text": "but now am found" },
+  { "time": 26, "note": 58, "text": "Was blind" },
+  { "time": 30, "note": 55, "text": "but now I see" },
+  { "time": 34, "note": 58, "text": "'Twas grace that taught" },
+  { "time": 38, "note": 60, "text": "my heart to fear" },
+  { "time": 42, "note": 58, "text": "And grace" },
+  { "time": 46, "note": 55, "text": "my fears relieved" },
+  { "time": 50, "note": 50, "text": "How precious did" },
+  { "time": 54, "note": 60, "text": "that grace appear" },
+  { "time": 58, "note": 58, "text": "The hour" },
+  { "time": 62, "note": 55, "text": "I first believed" }
+]

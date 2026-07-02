@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>POPOPO SparkleScore Live - アカペラ採点システム</title>
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="POPOPOアプリ内の新機能プロトタイプ。歌い手のアカペラ歌唱をリスナーがリアルタイムで採点し、美しいオーロラビジュアルでつながるインタラクティブシステム。">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+  <!-- QRCode.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Background Aurora Effects -->
+  <div class="aurora-bg">
+    <div class="aurora-glow aurora-1"></div>
+    <div class="aurora-glow aurora-2"></div>
+    <div class="aurora-glow aurora-3"></div>
+  </div>
+
+  <!-- Role Selection Screen (Shown when no role parameter is present) -->
+  <div id="selection-screen" class="screen active">
+    <div class="glass-card selection-card">
+      <div class="brand-logo">POPOPO</div>
+      <h1 class="glow-text">SparkleScore Live</h1>
+      <p class="subtitle">アカペラ歌唱をリアルタイムに彩り、採点するコンセプトデモ</p>
+      
+      <div class="selection-buttons">
+        <button id="btn-select-streamer" class="btn btn-primary btn-glow">
+          <i class="fa-solid fa-microphone-lines icon-margin"></i> 歌い手 (Streamer) として開始
+        </button>
+        <button id="btn-select-listener" class="btn btn-secondary">
+          <i class="fa-solid fa-users icon-margin"></i> リスナー (Listener) として参加
+        </button>
+      </div>
+
+      <div class="room-input-container" id="listener-room-input" style="display: none;">
+        <input type="text" id="input-room-id" placeholder="ルームIDを入力 (例: popopo)" value="live-session">
+        <button id="btn-join-room" class="btn btn-accent">ルームへ入室</button>
+        <button id="btn-back-selection" class="btn-text">戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Streamer Screen -->
+  <div id="streamer-screen" class="screen">
+    <!-- Header panel with connection details -->
+    <div class="streamer-header glass-card">
+      <div class="streamer-info">
+        <div class="live-indicator">
+          <span class="live-dot"></span> LIVE
+        </div>
+        <div class="room-title">Amazing Grace - A Cappella Live</div>
+      </div>
+      <div class="connection-widgets">
+        <div class="viewer-count">
+          <i class="fa-solid fa-users"></i> <span id="streamer-viewer-count">0</span> listeners
+        </div>
+        <button id="btn-toggle-qr" class="btn btn-sm btn-outline">
+          <i class="fa-solid fa-qrcode"></i> リスナー招待
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Live Stage Canvas -->
+    <div class="stage-container">
+      <canvas id="stage-canvas"></canvas>
+      
+      <!-- Overlaid Interactive Scoring Core -->
+      <div class="score-core-container">
+        <div class="score-ring-outer">
+          <div class="score-ring-inner">
+            <span class="score-label">Sparkle Score</span>
+            <span id="score-value" class="score-number">0.0</span>
+            <span id="score-feedback" class="score-feedback-text">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sync Combo Badge (appears when listeners react in sync) -->
+      <div id="sync-badge" class="sync-badge">
+        <span class="sync-label">SYNC BONUS</span>
+        <span id="sync-multiplier" class="sync-multiplier">x1.5</span>
+      </div>
+
+      <!-- Overlaid Lyrics & Pitch Guide -->
+      <div class="lyrics-pitch-overlay glass-card">
+        <div class="pitch-guide-track">
+          <!-- The visual timeline of upcoming pitch guide notes -->
+          <div id="pitch-guide-notes" class="pitch-notes-container"></div>
+          <!-- Vertical indicator where current time pitch is tracked -->
+          <div class="pitch-playhead"></div>
+          <!-- Pitch match target avatar / cursor -->
+          <div id="pitch-player-pointer" class="pitch-pointer"></div>
+        </div>
+        <div class="lyrics-display">
+          <p id="current-lyric" class="lyric-line next-lyric">Preparing A Cappella...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR Code & Link Sharing Modal -->
+    <div id="qr-modal" class="modal-overlay">
+      <div class="glass-card modal-card">
+        <button id="btn-close-qr" class="modal-close-btn">&times;</button>
+        <h3>リスナーを招待する</h3>
+        <p class="modal-desc">スマホでQRコードを読み取るか、URLを共有してリアルタイム採点に参加してもらいます。</p>
+        <div id="qrcode-container" class="qrcode-wrapper"></div>
+        <div class="share-url-container">
+          <input type="text" id="share-url-input" readonly>
+          <button id="btn-copy-url" class="btn btn-sm btn-accent">コピー</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Song Result Modal (shown when the song ends) -->
+    <div id="result-modal" class="modal-overlay">
+      <div class="glass-card modal-card result-card">
+        <button id="btn-close-result" class="modal-close-btn">&times;</button>
+        <h3 class="result-title">RESULT</h3>
+
+        <div class="result-main-row">
+          <div class="final-grade-badge" id="result-grade">-</div>
+          <div class="result-score-block">
+            <span class="final-score-label">Final Sparkle Score</span>
+            <span class="final-score-num" id="result-final-score">0.0</span>
+            <span class="result-breakdown" id="result-breakdown">ライブ熱量 - / 星評価 -</span>
+          </div>
+        </div>
+
+        <!-- Emotion waveform of the whole performance -->
+        <div class="waveform-section">
+          <span class="section-label">感動の波形</span>
+          <canvas id="waveform-canvas" width="520" height="120"></canvas>
+        </div>
+
+        <!-- Highlight moment -->
+        <div class="highlight-section" id="highlight-section">
+          <span class="section-label">最高潮の瞬間</span>
+          <div class="highlight-content" id="highlight-content">-</div>
+        </div>
+
+        <!-- Reaction totals -->
+        <div class="reaction-totals" id="reaction-totals"></div>
+
+        <!-- Live star ratings from listeners -->
+        <div class="rating-summary">
+          <span class="section-label">リスナー星評価</span>
+          <div class="rating-summary-row">
+            <span id="result-stars-visual" class="result-stars-visual">-</span>
+            <span id="result-stars-detail" class="result-stars-detail">評価待ち...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Demo Audio / Humming Controller (Simulating Streamer Activity) -->
+    <div class="streamer-controls glass-card">
+      <div class="control-group">
+        <span class="control-label">歌声シミュレーション:</span>
+        <button id="btn-start-demo-song" class="btn btn-accent btn-sm">
+          <i class="fa-solid fa-circle-play"></i> デモ歌唱スタート
+        </button>
+        <button id="btn-stop-demo-song" class="btn btn-danger btn-sm" disabled>
+          <i class="fa-solid fa-circle-stop"></i> 停止
+        </button>
+      </div>
+      <div class="control-group pitch-sliders">
+        <label for="slider-sim-pitch">ピッチ精度補正:</label>
+        <input type="range" id="slider-sim-pitch" min="0" max="100" value="85">
+        <span id="sim-pitch-val">85%</span>
+      </div>
+      <div class="control-group volume-sliders">
+        <label for="slider-sim-volume">声量:</label>
+        <input type="range" id="slider-sim-volume" min="0" max="100" value="70">
+        <span id="sim-volume-val">70%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Listener Screen -->
+  <div id="listener-screen" class="screen">
+    <div class="listener-header glass-card">
+      <div class="brand-small">POPOPO SparkleScore</div>
+      <div class="listener-stage-info">
+        <span class="music-note-icon"><i class="fa-solid fa-music"></i></span>
+        <div class="song-details">
+          <span class="song-title">Amazing Grace</span>
+          <span class="streamer-name">A Cappella Live Session</span>
+        </div>
+      </div>
+      <div class="listener-score-mini">
+        <span class="mini-score-label">Live Score:</span>
+        <span id="listener-score-val" class="mini-score-num">0.0</span>
+      </div>
+    </div>
+
+    <!-- Main scoring controller -->
+    <div class="scoring-panel">
+      <!-- Global Heat Gauge (synced from streamer) -->
+      <div class="heat-gauge-wrapper glass-card">
+        <div class="heat-label-row">
+          <span class="heat-title"><i class="fa-solid fa-fire-flame-curved"></i> 会場ヒート</span>
+          <span id="heat-value" class="heat-value">0</span>
+        </div>
+        <div class="heat-bar-track">
+          <div id="heat-bar-fill" class="heat-bar-fill"></div>
+        </div>
+        <div class="heat-help">連打で会場を熱くしよう！みんなで同じボタンを押すとシンクロボーナス！</div>
+      </div>
+
+      <!-- Reaction Buttons Grid -->
+      <div class="reactions-container glass-card">
+        <div class="reactions-title-row">
+          <h3 class="reactions-title">連打で気持ちを届けよう！</h3>
+          <span id="combo-indicator" class="combo-indicator">x1</span>
+        </div>
+        <div class="reactions-grid">
+          <button class="reaction-btn btn-tear" data-reaction="tear">
+            <span class="emoji">😭</span>
+            <span class="label">泣ける</span>
+            <span class="tap-count" id="count-tear">0</span>
+          </button>
+          <button class="reaction-btn btn-goosebumps" data-reaction="goosebumps">
+            <span class="emoji">⚡</span>
+            <span class="label">鳥肌</span>
+            <span class="tap-count" id="count-goosebumps">0</span>
+          </button>
+          <button class="reaction-btn btn-god" data-reaction="god">
+            <span class="emoji">✨</span>
+            <span class="label">神歌声</span>
+            <span class="tap-count" id="count-god">0</span>
+          </button>
+          <button class="reaction-btn btn-popopo" data-reaction="popopo">
+            <span class="emoji">🎉</span>
+            <span class="label">POPOPO!</span>
+            <span class="tap-count" id="count-popopo">0</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Star Rating Overlay (shown when the song ends) -->
+    <div id="rating-overlay" class="modal-overlay">
+      <div class="glass-card modal-card rating-card">
+        <h3>歌唱終了！</h3>
+        <p class="modal-desc">今日の歌声はどうでしたか？星で最終評価を送りましょう。</p>
+        <div class="stars-row" id="stars-row">
+          <button class="star-btn" data-stars="1"><i class="fa-solid fa-star"></i></button>
+          <button class="star-btn" data-stars="2"><i class="fa-solid fa-star"></i></button>
+          <button class="star-btn" data-stars="3"><i class="fa-solid fa-star"></i></button>
+          <button class="star-btn" data-stars="4"><i class="fa-solid fa-star"></i></button>
+          <button class="star-btn" data-stars="5"><i class="fa-solid fa-star"></i></button>
+        </div>
+        <p id="rating-thanks" class="rating-thanks" style="display: none;">評価を送信しました！ありがとう ✨</p>
+      </div>
+    </div>
+
+    <!-- Listener Final Result Card -->
+    <div id="listener-result-overlay" class="modal-overlay">
+      <div class="glass-card modal-card listener-result-card">
+        <h3>今回のリザルト</h3>
+        <div class="final-grade-badge" id="listener-final-grade">-</div>
+        <div class="final-score-line">
+          <span class="final-score-label">Final Sparkle Score</span>
+          <span class="final-score-num" id="listener-final-score">0.0</span>
+        </div>
+        <div class="final-stars-line" id="listener-final-stars"></div>
+        <button id="btn-close-listener-result" class="btn btn-accent btn-sm">閉じる</button>
+      </div>
+    </div>
+
+    <!-- Floating Canvas for Local Listener Feedback Particles -->
+    <canvas id="listener-particle-canvas" class="listener-canvas-overlay"></canvas>
+  </div>
+
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- App JS -->
+  <script src="app.js"></script>
+</body>
+</html>
