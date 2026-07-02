@@ -1581,3 +1581,159 @@ body {
 .selection-card {
   margin: auto;
 }
+
+/* --- Sparkle Score Info Modal --- */
+.score-info-link {
+  margin: -18px 0 12px;
+  font-size: 0.82rem;
+  color: var(--primary-neon);
+}
+
+.score-info-link:hover {
+  color: #fff;
+}
+
+.info-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  vertical-align: middle;
+  transition: color 0.2s ease;
+  touch-action: manipulation;
+}
+
+.info-icon-btn:hover {
+  color: var(--primary-neon);
+}
+
+.score-info-card {
+  max-width: 440px;
+  text-align: left;
+}
+
+.score-info-card h3 {
+  text-align: center;
+}
+
+.score-info-card .modal-desc {
+  text-align: center;
+}
+
+.score-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.score-info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.score-info-item .info-emoji {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.score-info-item p {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+/* --- Donmai (affectionate "nice try") button --- */
+.donmai-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.donmai-optin input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--primary-neon);
+  cursor: pointer;
+}
+
+.donmai-optin small {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.donmai-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-glass);
+}
+
+.donmai-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  background: rgba(125, 211, 252, 0.08);
+  color: #bae6fd;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+}
+
+.donmai-btn:hover:not(:disabled) {
+  background: rgba(125, 211, 252, 0.18);
+  transform: translateY(-1px);
+}
+
+.donmai-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.donmai-btn .emoji {
+  font-size: 1.2rem;
+}
+
+.donmai-remaining {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.donmai-note {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.donmai-chip {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.donmai-chip-note {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}

@@ -52,7 +52,8 @@ function publicRoomInfo(room) {
     songTitle: room.songTitle,
     singerName: room.singerName,
     isLive: room.isLive,
-    listenersCount: room.listenersCount
+    listenersCount: room.listenersCount,
+    donmaiEnabled: !!room.donmaiEnabled
   };
 }
 
@@ -71,6 +72,7 @@ io.on('connection', (socket) => {
       singerName,
       listenersCount: 0,
       isLive: false,
+      donmaiEnabled: !!(data && data.donmaiEnabled),
       createdAt: Date.now()
     });
     socket.join(roomId);
@@ -96,6 +98,7 @@ io.on('connection', (socket) => {
           singerName: sanitizeText(data && data.singerName, 30),
           listenersCount: 0,
           isLive: false,
+          donmaiEnabled: !!(data && data.donmaiEnabled),
           createdAt: Date.now()
         };
         rooms.set(roomId, room);
@@ -103,6 +106,7 @@ io.on('connection', (socket) => {
         room.streamerSocketId = socket.id;
         if (data && data.songTitle) room.songTitle = sanitizeText(data.songTitle, 60);
         if (data && data.singerName) room.singerName = sanitizeText(data.singerName, 30);
+        if (data && typeof data.donmaiEnabled !== 'undefined') room.donmaiEnabled = !!data.donmaiEnabled;
       }
       socket.join(roomId);
       if (typeof callback === 'function') {

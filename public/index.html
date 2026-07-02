@@ -39,6 +39,9 @@
       <div class="brand-logo">POPOPO</div>
       <h1 class="glow-text">SparkleScore Live</h1>
       <p class="subtitle">POPOPOのライブと併用する、リアルタイム採点&リアクションシステム</p>
+      <button class="btn-text btn-score-info score-info-link">
+        <i class="fa-solid fa-circle-question"></i> Sparkle Score とは？
+      </button>
 
       <div class="selection-buttons" id="selection-buttons">
         <button id="btn-select-streamer" class="btn btn-primary btn-glow">
@@ -53,6 +56,10 @@
       <div class="room-input-container" id="streamer-setup" style="display: none;">
         <input type="text" id="input-song-title" placeholder="曲名 (例: Amazing Grace)" maxlength="60">
         <input type="text" id="input-singer-name" placeholder="歌い手名 (任意)" maxlength="30">
+        <label class="donmai-optin">
+          <input type="checkbox" id="input-donmai-enabled">
+          <span>「ドンマイ😅」ボタンを許可する<br><small>音を外した時の愛あるツッコミ用。スコアには一切影響せず、1人3回までです。</small></span>
+        </label>
         <button id="btn-create-room" class="btn btn-primary btn-glow">ルームを作成して開始</button>
         <button id="btn-back-selection-streamer" class="btn-text">戻る</button>
       </div>
@@ -115,6 +122,9 @@
         <span id="live-state-label" class="live-state waiting">待機中</span>
         <span id="live-timer" class="live-timer">00:00</span>
         <span class="live-heat-mini"><i class="fa-solid fa-fire-flame-curved"></i> <span id="streamer-heat-val">0</span></span>
+        <button class="info-icon-btn btn-score-info" aria-label="Sparkle Scoreとは">
+          <i class="fa-solid fa-circle-question"></i>
+        </button>
       </div>
     </div>
 
@@ -201,7 +211,11 @@
 
     <!-- Prominent Live Score Display -->
     <div class="listener-score-hero glass-card">
-      <span class="hero-score-label">Sparkle Score</span>
+      <span class="hero-score-label">Sparkle Score
+        <button class="info-icon-btn btn-score-info" aria-label="Sparkle Scoreとは">
+          <i class="fa-solid fa-circle-question"></i>
+        </button>
+      </span>
       <div class="hero-score-row">
         <span id="listener-score-val" class="hero-score-num">0.0</span>
         <span id="listener-score-feedback" class="hero-score-feedback">STANDBY</span>
@@ -253,6 +267,16 @@
             <span class="tap-count" id="count-popopo">0</span>
           </button>
         </div>
+
+        <!-- Donmai button (only visible when the singer opts in) -->
+        <div id="donmai-container" class="donmai-container" style="display: none;">
+          <button id="btn-donmai" class="donmai-btn">
+            <span class="emoji">😅</span>
+            <span class="label">ドンマイ</span>
+            <span id="donmai-remaining" class="donmai-remaining">残り3回</span>
+          </button>
+          <span class="donmai-note">ご愛嬌ツッコミ。スコアには影響しません</span>
+        </div>
       </div>
     </div>
 
@@ -288,6 +312,33 @@
 
     <!-- Floating Canvas for Local Listener Feedback Particles -->
     <canvas id="listener-particle-canvas" class="listener-canvas-overlay"></canvas>
+  </div>
+
+  <!-- Sparkle Score Explanation Modal (shared across all screens) -->
+  <div id="score-info-modal" class="modal-overlay">
+    <div class="glass-card modal-card score-info-card">
+      <button id="btn-close-score-info" class="modal-close-btn">&times;</button>
+      <h3>Sparkle Score とは？</h3>
+      <p class="modal-desc">リスナーの盛り上がりをリアルタイムに数値化した、この会場だけのライブスコアです。</p>
+      <div class="score-info-list">
+        <div class="score-info-item">
+          <span class="info-emoji">🔥</span>
+          <p>リスナーがリアクションボタンを連打すると「会場ヒート」が蓄積され、0〜100のスコアに換算されます。</p>
+        </div>
+        <div class="score-info-item">
+          <span class="info-emoji">⏱️</span>
+          <p>リアクションが止まると熱は少しずつ冷めます。盛り上がり続けるほど高スコア！</p>
+        </div>
+        <div class="score-info-item">
+          <span class="info-emoji">⚡</span>
+          <p>複数人が3秒以内に同じリアクションを押すと「シンクロボーナス」で最大2倍の熱量に。</p>
+        </div>
+        <div class="score-info-item">
+          <span class="info-emoji">🏆</span>
+          <p>曲が終わると「ライブ熱量の平均 60% + 星評価 40%」で最終スコアとS/A/B/Cグレードが決まります。</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Socket.io -->

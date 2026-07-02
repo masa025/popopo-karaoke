@@ -24,8 +24,10 @@ document.addEventListener('DOMContentLoaded', () => {
     tear: ['😭', '泣ける'],
     goosebumps: ['⚡', '鳥肌'],
     god: ['✨', '神歌声'],
-    popopo: ['🎉', 'POPOPO!']
+    popopo: ['🎉', 'POPOPO!'],
+    donmai: ['😅', 'ドンマイ']
   };
+  const DONMAI_MAX_PER_SONG = 3;
   const HEAT_TAU = 8;    // Exponential decay time constant (seconds) => half-life ~5.5s
   const HEAT_GAIN = 1.7; // Points-per-tap scaling factor
   let heat = 0;
@@ -42,6 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let reactionTotals = { tear: 0, goosebumps: 0, god: 0, popopo: 0 };
   let lastHighlight = null;
   let syncBadgeTimeout = null;
+  let donmaiEnabled = false;          // Streamer opt-in
+  let donmaiTotal = 0;                // Total donmai count for the song
+  let donmaiPerListener = new Map();  // listenerId -> count (max 3 per song)
 
   // Particles System
   let stageCanvas, stageCtx;
@@ -58,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let comboCount = 0;
   let lastTapAt = 0;
   let hasRatedThisSong = false;
+  let donmaiRemaining = DONMAI_MAX_PER_SONG;
 
   // --- Visual Classes ---
   class Wave {
@@ -123,6 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         case 'popopo':
           this.colors = ['#f472b6', '#ec4899', '#be185d'];
+          break;
+        case 'donmai': // Soft sweat-drop blues
+          this.colors = ['#7dd3fc', '#bae6fd', '#e0f2fe'];
           break;
         default:
           this.colors = ['#ffffff', '#f3f4f6'];
@@ -247,12 +256,28 @@ document.addEventListener('DOMContentLoaded', () => {
   if (paramRoom) roomId = paramRoom.toUpperCase();
   if (paramSong) songTitle = decodeURIComponent(paramSong);
   if (paramSinger) singerName = decodeURIComponent(paramSinger);
+  if (urlParams.get('donmai') === '1') donmaiEnabled = true;
 
   if (paramRole === 'streamer' && roomId) {
     startStreamerRole();
   } else if (paramRole === 'listener' && roomId) {
     startListenerRole();
   }
+
+  // --- Sparkle Score Info Modal (available on every screen) ---
+  document.querySelectorAll('.btn-score-info').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('score-info-modal').classList.add('active');
+    });
+  });
+  document.getElementById('btn-close-score-info').addEventListener('click', () => {
+    document.getElementById('score-info-modal').classList.remove('active');
+  });
+  document.getElementById('score-info-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'score-info-modal') {
+      e.target.classList.remove('active'); // Tap outside the card to close
+    }
+  });
 
   // --- Selection Screen Interaction ---
   document.getElementById('btn-select-streamer').addEventListener('click', () => {
@@ -280,6 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-create-room').addEventListener('click', () => {
     songTitle = document.getElementById('input-song-title').value.trim() || 'アカペラライブ';
     singerName = document.getElementById('input-singer-name').value.trim();
+    donmaiEnabled = document.getElementById('input-donmai-enabled').checked;
     hideJoinError();
     startStreamerRole();
   });
@@ -354,7 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
       role: 'streamer',
       room: roomId,
       song: songTitle,
-      singer: singerName
+      singer: singerName,
+      donmai: donmaiEnabled ? '1' : '0'
     });
     window.history.replaceState({}, '', `?${params.toString()}`);
   }
@@ -430,6 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
     scoreSampleCount = 0;
     starRatings.clear();
     reactionTotals = { tear: 0, goosebumps: 0, god: 0, popopo: 0 };
+    donmaiTotal = 0;
+    donmaiPerListener.clear();
     document.getElementById('result-modal').classList.remove('active');
 
     // UI state
@@ -513,6 +542,23 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    // Donmai button (affectionate "nice try" — never affects the score)
+    document.getElementById('btn-donmai').addEventListener('click', () => {
+      if (donmaiRemaining <= 0) return;
+      donmaiRemaining--;
+      updateDonmaiUI();
+
+      const btn = document.getElementById('btn-donmai');
+      const rect = btn.getBoundingClientRect();
+      createLocalListenerParticles(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+        'donmai'
+      );
+      spawnFloatingEmoji('donmai');
+      sendReaction('donmai');
+    });
+
     // Star Rating buttons
     document.querySelectorAll('.star-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -558,6 +604,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('listener-song-title').innerText = room.songTitle || '-';
     document.getElementById('listener-singer-name').innerText = room.singerName || 'POPOPO Live Session';
     setListenerLiveBadge(room.isLive);
+
+    donmaiEnabled = !!room.donmaiEnabled;
+    document.getElementById('donmai-container').style.display = donmaiEnabled ? 'flex' : 'none';
+    updateDonmaiUI();
+  }
+
+  function updateDonmaiUI() {
+    const btn = document.getElementById('btn-donmai');
+    const remainEl = document.getElementById('donmai-remaining');
+    if (!btn || !remainEl) return;
+    remainEl.innerText = donmaiRemaining > 0 ? `残り${donmaiRemaining}回` : '本日終了';
+    btn.disabled = donmaiRemaining <= 0;
   }
 
   function setListenerLiveBadge(isLive) {
@@ -618,12 +676,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentRole === 'streamer') {
           if (roomId) {
             // Re-join existing room (reload / reconnect / server restart)
-            socket.emit('join-room', { roomId, role: 'streamer', songTitle, singerName }, (res) => {
+            socket.emit('join-room', { roomId, role: 'streamer', songTitle, singerName, donmaiEnabled }, (res) => {
               if (res && res.ok) updateStreamerSongUI();
             });
           } else {
             // Create a brand-new room
-            socket.emit('create-room', { songTitle, singerName }, (res) => {
+            socket.emit('create-room', { songTitle, singerName, donmaiEnabled }, (res) => {
               if (res && res.ok) {
                 roomId = res.roomId;
                 updateStreamerSongUI();
@@ -701,6 +759,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (event === 'song-start') {
             hasRatedThisSong = false;
             tapCounts = {};
+            donmaiRemaining = DONMAI_MAX_PER_SONG;
+            updateDonmaiUI();
             Object.keys(REACTION_META).forEach(t => {
               const el = document.getElementById(`count-${t}`);
               if (el) el.innerText = '0';
@@ -784,6 +844,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function registerReaction(listenerId, reactionType) {
+    // Donmai: counted separately, hard-capped per listener, and NEVER touches the score
+    if (reactionType === 'donmai') {
+      const used = donmaiPerListener.get(listenerId) || 0;
+      if (used >= DONMAI_MAX_PER_SONG) return;
+      donmaiPerListener.set(listenerId, used + 1);
+      donmaiTotal++;
+      return;
+    }
+
     const weight = REACTION_WEIGHTS[reactionType] || 2;
     const now = Date.now();
 
@@ -991,11 +1060,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalsEl = document.getElementById('reaction-totals');
     totalsEl.innerHTML = '';
     Object.entries(REACTION_META).forEach(([type, [emoji, label]]) => {
+      if (type === 'donmai') return; // Shown separately below (never part of the score)
       const chip = document.createElement('div');
       chip.className = 'reaction-total-chip';
       chip.innerHTML = `<span>${emoji}</span><span>${label}</span><span>× ${reactionTotals[type] || 0}</span>`;
       totalsEl.appendChild(chip);
     });
+    if (donmaiEnabled || donmaiTotal > 0) {
+      const chip = document.createElement('div');
+      chip.className = 'reaction-total-chip donmai-chip';
+      chip.innerHTML = `<span>😅</span><span>ドンマイ</span><span>× ${donmaiTotal}</span><span class="donmai-chip-note">ご愛嬌・スコア影響なし</span>`;
+      totalsEl.appendChild(chip);
+    }
 
     renderWaveform(lastHighlight ? lastHighlight.time : undefined);
     updateRatingSummary();
@@ -1087,6 +1163,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'goosebumps': color = '#fbbf24'; break;
       case 'god': color = '#a855f7'; break;
       case 'popopo': color = '#ec4899'; break;
+      case 'donmai': color = '#7dd3fc'; break;
       default: color = '#ffffff';
     }
 
