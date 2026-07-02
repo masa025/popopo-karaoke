@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let donmaiEnabled = false;          // Streamer opt-in
   let donmaiTotal = 0;                // Total donmai count for the song
   let donmaiPerListener = new Map();  // listenerId -> count (max 3 per song)
+  let donmaiMoments = [];             // Timestamped donmai (for the result waveform)
 
   // Particles System
   let stageCanvas, stageCtx;
@@ -459,6 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reactionTotals = { tear: 0, goosebumps: 0, god: 0, popopo: 0 };
     donmaiTotal = 0;
     donmaiPerListener.clear();
+    donmaiMoments = [];
     document.getElementById('result-modal').classList.remove('active');
 
     // UI state
@@ -850,6 +852,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (used >= DONMAI_MAX_PER_SONG) return;
       donmaiPerListener.set(listenerId, used + 1);
       donmaiTotal++;
+      if (isSongPlaying) {
+        donmaiMoments.push({ t: (Date.now() - sessionStartTime) / 1000 });
+      }
       return;
     }
 
@@ -963,17 +968,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const maxT = heatCurve[heatCurve.length - 1].t || 1;
-    const PAD = 8;
-    const xFor = t => PAD + (t / maxT) * (W - PAD * 2);
-    const yFor = h => H - PAD - (h / 100) * (H - PAD * 2);
+    const PADX = 10;   // Horizontal padding
+    const PADT = 18;   // Top padding (donmai lane)
+    const PADB = 24;   // Bottom padding (time axis labels)
+    const baseY = H - PADB;
+    const xFor = t => PADX + (t / maxT) * (W - PADX * 2);
+    const yFor = h => baseY - (h / 100) * (baseY - PADT);
 
+    // Interpolated heat value at an arbitrary time
+    const heatAt = (t) => {
+      let lo = heatCurve[0];
+      let hi = heatCurve[heatCurve.length - 1];
+      for (let i = 0; i < heatCurve.length; i++) {
+        if (heatCurve[i].t >= t) {
+          hi = heatCurve[i];
+          lo = heatCurve[Math.max(0, i - 1)];
+          break;
+        }
+      }
+      if (hi.t === lo.t) return lo.heat;
+      const f = Math.max(0, Math.min(1, (t - lo.t) / (hi.t - lo.t)));
+      return lo.heat + (hi.heat - lo.heat) * f;
+    };
+
+    // --- Time axis (mm:ss ticks) ---
+    let tickStep;
+    if (maxT <= 45) tickStep = 10;
+    else if (maxT <= 120) tickStep = 30;
+    else if (maxT <= 360) tickStep = 60;
+    else tickStep = 120;
+
+    ctx.font = '10px "Outfit", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 1;
+    for (let t = 0; t <= maxT; t += tickStep) {
+      const x = xFor(t);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+      ctx.beginPath();
+      ctx.moveTo(x, PADT);
+      ctx.lineTo(x, baseY);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillText(fmtTime(t), x, H - 8);
+    }
+    // Baseline
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(PADX, baseY);
+    ctx.lineTo(W - PADX, baseY);
+    ctx.stroke();
+
+    // --- Heat area fill + curve ---
     const gradient = ctx.createLinearGradient(0, 0, 0, H);
     gradient.addColorStop(0, 'rgba(236, 72, 153, 0.45)');
     gradient.addColorStop(1, 'rgba(59, 130, 246, 0.05)');
     ctx.beginPath();
-    ctx.moveTo(xFor(heatCurve[0].t), H - PAD);
+    ctx.moveTo(xFor(heatCurve[0].t), baseY);
     heatCurve.forEach(p => ctx.lineTo(xFor(p.t), yFor(p.heat)));
-    ctx.lineTo(xFor(maxT), H - PAD);
+    ctx.lineTo(xFor(maxT), baseY);
     ctx.closePath();
     ctx.fillStyle = gradient;
     ctx.fill();
@@ -990,11 +1042,54 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
+    // --- Reaction markers (1-second bins, dominant emoji above the curve) ---
+    if (momentLog.length > 0) {
+      const bins = new Map();
+      momentLog.forEach(m => {
+        const sec = Math.floor(m.t);
+        if (!bins.has(sec)) bins.set(sec, {});
+        const b = bins.get(sec);
+        b[m.type] = (b[m.type] || 0) + 1;
+      });
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      bins.forEach((counts, sec) => {
+        let domType = null, domCount = 0;
+        Object.entries(counts).forEach(([type, c]) => {
+          if (c > domCount) { domCount = c; domType = type; }
+        });
+        const meta = REACTION_META[domType];
+        if (!meta) return;
+        const t = Math.min(sec + 0.5, maxT);
+        const x = xFor(t);
+        const y = Math.max(PADT + 12, yFor(heatAt(t)) - 8);
+        ctx.fillText(meta[0], x, y);
+      });
+    }
+
+    // --- Donmai markers (top lane with drop lines) ---
+    if (donmaiMoments.length > 0) {
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      donmaiMoments.forEach(dm => {
+        const x = xFor(Math.min(dm.t, maxT));
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.4)';
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, PADT + 4);
+        ctx.lineTo(x, baseY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText('😅', x, PADT);
+      });
+    }
+
+    // --- PEAK marker ---
     if (typeof highlightTime === 'number') {
       const hx = xFor(highlightTime);
       ctx.beginPath();
-      ctx.moveTo(hx, PAD);
-      ctx.lineTo(hx, H - PAD);
+      ctx.moveTo(hx, PADT);
+      ctx.lineTo(hx, baseY);
       ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 4]);
@@ -1004,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.fillStyle = '#fbbf24';
       ctx.font = '11px "Outfit", sans-serif';
       ctx.textAlign = hx > W - 60 ? 'right' : 'left';
-      ctx.fillText('PEAK', hx + (hx > W - 60 ? -5 : 5), PAD + 10);
+      ctx.fillText('PEAK', hx + (hx > W - 60 ? -5 : 5), PADT + 12);
     }
   }
 
@@ -1071,6 +1166,17 @@ document.addEventListener('DOMContentLoaded', () => {
       chip.className = 'reaction-total-chip donmai-chip';
       chip.innerHTML = `<span>😅</span><span>ドンマイ</span><span>× ${donmaiTotal}</span><span class="donmai-chip-note">ご愛嬌・スコア影響なし</span>`;
       totalsEl.appendChild(chip);
+    }
+
+    // Donmai time list (practice feedback: exactly when the "nice try" moments happened)
+    const donmaiTimesEl = document.getElementById('donmai-times');
+    if (donmaiMoments.length > 0) {
+      const shown = donmaiMoments.slice(0, 10).map(dm => fmtTime(dm.t)).join(', ');
+      const more = donmaiMoments.length > 10 ? ` ほか${donmaiMoments.length - 10}件` : '';
+      donmaiTimesEl.innerText = `😅 ドンマイ位置: ${shown}${more}`;
+      donmaiTimesEl.style.display = 'block';
+    } else {
+      donmaiTimesEl.style.display = 'none';
     }
 
     renderWaveform(lastHighlight ? lastHighlight.time : undefined);
